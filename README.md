@@ -1,5 +1,17 @@
 # CPLResourceRunner
 
+Added some basic AES encrypt/decrypt functionality
+
+0. Replace `changeme` in Class1.cs to a different password
+1. Compile encrypt.cs and run it on your shellcode, along with your password
+  * `C:\Windows\Microsoft.NET\Framework64\v4.0.30319\csc.exe .\encrypt.cs`
+  * `encrypt.exe shell.bin "changme"`
+2. Copy the output encrypted.txt to Resources.txt in the repo
+3. Compile for x86, rename `CPLResourceRunner.dll` to `RunMe.cpl`
+
+
+## Original
+
 Create Payload "RAW" fully-staged (S) (x86) in cobalt strike
 
 Run ConvertShellcode.py on your beacon.bin file
